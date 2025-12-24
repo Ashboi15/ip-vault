@@ -1,0 +1,18 @@
+node_modules
+.env
+.DS_Store
+coverage
+cache
+.gzip
+.nyc_output
+.idea
+.vscode
+*.log
+*.sqlite
+# Hardhat
+artifacts
+cache
+typechain
+# React
+build
+dist
