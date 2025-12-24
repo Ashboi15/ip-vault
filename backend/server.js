@@ -10,7 +10,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const app = express();
-const port = 5001;
+const port = process.env.PORT || 5001;
 const SECRET_KEY = "super-secret-key-change-this"; // For JWT
 
 // Middleware

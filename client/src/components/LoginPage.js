@@ -15,9 +15,10 @@ const LoginPage = ({ onLogin }) => {
 
         const endpoint = isRegistering ? 'register' : 'login';
         const body = isRegistering ? { username, email, password } : { username, password };
+        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
         try {
-            const response = await fetch(`http://localhost:5001/api/auth/${endpoint}`, {
+            const response = await fetch(`${API_URL}/auth/${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)

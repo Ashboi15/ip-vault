@@ -5,7 +5,7 @@ import LoginPage from './components/LoginPage';
 import { QRCodeSVG } from 'qrcode.react';
 import BlockExplorer from './components/BlockExplorer';
 
-const API_URL = 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 // Contract Address (from your local deployment)
 const CONTRACT_ADDRESS = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
 const CONTRACT_ABI = [
