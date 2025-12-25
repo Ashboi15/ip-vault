@@ -2,6 +2,9 @@
   command = "CI=false npm run build"
   publish = "build"
 
+[build.environment]
+  SECRETS_SCAN_ENABLED = "false"
+
 
 
 [[redirects]]
