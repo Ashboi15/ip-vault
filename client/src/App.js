@@ -4,6 +4,64 @@ import './App.css';
 import LoginPage from './components/LoginPage';
 import { QRCodeSVG } from 'qrcode.react';
 import BlockExplorer from './components/BlockExplorer';
+import { createWeb3Modal, defaultConfig } from '@web3modal/ethers/react';
+import { useWeb3ModalProvider, useWeb3ModalAccount } from '@web3modal/ethers/react';
+
+// 1. Get projectId from WalletConnect Cloud
+const projectId = 'YOUR_PROJECT_ID'; // Replace with a real one for production
+
+// 2. Set chains
+const mainnet = {
+  chainId: 1,
+  name: 'Ethereum',
+  currency: 'ETH',
+  explorerUrl: 'https://etherscan.io',
+  rpcUrl: 'https://cloudflare-eth.com'
+}
+
+const sepolia = {
+  chainId: 11155111,
+  name: 'Sepolia',
+  currency: 'ETH',
+  explorerUrl: 'https://sepolia.etherscan.io',
+  rpcUrl: 'https://rpc.sepolia.org'
+}
+
+const local = {
+  chainId: 1337,
+  name: 'Localhost',
+  currency: 'ETH',
+  rpcUrl: 'http://127.0.0.1:8545'
+}
+
+// 3. Create a metadata object
+const metadata = {
+  name: 'IP Vault',
+  description: 'Blockchain IP Registration',
+  url: 'https://ip-vault.netlify.app', // origin must match your domain & subdomain
+  icons: ['https://avatars.mywebsite.com/']
+}
+
+// 4. Create Ethers config
+const ethersConfig = defaultConfig({
+  /*Required*/
+  metadata,
+
+  /*Optional*/
+  enableEIP6963: true, // true by default
+  enableInjected: true, // true by default
+  enableCoinbase: true, // true by default
+  rpcUrl: '...', // used for the Coinbase SDK
+  defaultChainId: 1, // used for the Coinbase SDK
+})
+
+// 5. Create a Web3Modal instance
+createWeb3Modal({
+  ethersConfig,
+  chains: [mainnet, sepolia, local],
+  projectId,
+  enableAnalytics: true // Optional - defaults to your Cloud configuration
+})
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 // Contract Address (from your local deployment)
@@ -17,13 +75,17 @@ const CONTRACT_ABI = [
 ];
 
 const App = () => {
+  // --- WEB3MODAL HOOKS ---
+  const { address, isConnected } = useWeb3ModalAccount()
+  const { walletProvider } = useWeb3ModalProvider()
+
   // --- AUTH STATE ---
   const [user, setUser] = useState(null); // Web2 User
   const [dbFiles, setDbFiles] = useState([]);
 
   // --- EXISTING STATE ---
-  const [account, setAccount] = useState(null); // Web3 Account
-  const [active, setActive] = useState(false);
+  // const [account, setAccount] = useState(null); // Replaced by 'address'
+  // const [active, setActive] = useState(false);  // Replaced by 'isConnected'
   const [contract, setContract] = useState(null);
 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -56,22 +118,25 @@ const App = () => {
       setUser(JSON.parse(storedUser));
       fetchDbFiles(token);
     }
+  }, []);
 
-    // Check Wallet
-    checkWalletConnection();
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts) => {
-        if (accounts.length > 0) {
-          setAccount(accounts[0]);
-          setActive(true);
-          setupContract(accounts[0]);
-        } else {
-          disconnectWallet();
-        }
-      });
+  // Sync Contract when Provider Changes
+  useEffect(() => {
+    if (isConnected && walletProvider) {
+      setupContract(); // New setup
+    } else {
+      setContract(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isConnected, walletProvider]);
+
+  const setupContract = async () => {
+    if (!walletProvider) return;
+    const ethersProvider = new ethers.BrowserProvider(walletProvider)
+    const signer = await ethersProvider.getSigner()
+    const ipContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+    setContract(ipContract);
+  }
 
   // Fetch Files from DB (Authenticated)
   const fetchDbFiles = async (tokenOverride) => {
@@ -336,28 +401,16 @@ const App = () => {
                   <i className="fas fa-user-circle mr-1"></i> {user.username}
                 </div>
 
-                {!active ? (
+                {!isConnected ? (
                   <div className="flex items-center">
-                    <button
-                      onClick={connectWallet}
-                      className="bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg transform hover:scale-105 transition duration-200 flex items-center"
-                    >
-                      <i className="fas fa-wallet mr-2"></i> Connect
-                    </button>
-                    <button
-                      onClick={connectDevWallet}
-                      className="ml-2 text-gray-400 hover:text-white text-xs underline"
-                    >
-                      Dev Mode
-                    </button>
+                    {/* Web3Modal Button */}
+                    <w3m-button />
                   </div>
                 ) : (
                   <div className="flex items-center space-x-4 bg-gray-800 px-4 py-2 rounded-full border border-gray-700">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-gray-300 text-sm font-mono">{account?.slice(0, 6)}...{account?.slice(-4)}</span>
-                    <button onClick={disconnectWallet} className="text-gray-400 hover:text-white ml-2" title="Disconnect Wallet">
-                      <i className="fas fa-unlink"></i>
-                    </button>
+                    <span className="text-gray-300 text-sm font-mono">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+                    <w3m-button /> {/* This handles disconnect/account view */}
                   </div>
                 )}
 
@@ -392,7 +445,7 @@ const App = () => {
                   <h1 className="text-2xl font-mono text-white mb-2 break-all">{user.username} {user.email ? `(${user.email})` : ''}</h1>
                   <div className="flex items-center justify-center md:justify-start gap-4 text-sm text-gray-400">
                     <span className="flex items-center"><i className="fas fa-shield-alt mr-2 text-blue-400"></i> Database Verified</span>
-                    {active ?
+                    {isConnected ?
                       <span className="flex items-center text-green-400"><i className="fas fa-link mr-2"></i> Wallet Connected</span> :
                       <span className="flex items-center text-yellow-400"><i className="fas fa-unlink mr-2"></i> Wallet Not Connected</span>
                     }
