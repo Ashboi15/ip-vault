@@ -212,71 +212,7 @@ const App = () => {
     }
   };
 
-  const checkWalletConnection = async () => {
-    if (window.ethereum) {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          setAccount(accounts[0]);
-          setActive(true);
-          setupContract(accounts[0]);
-        }
-      } catch (err) {
-        console.error("Check wallet error:", err);
-      }
-    }
-  };
 
-  const connectWallet = async () => {
-    if (!window.ethereum) {
-      alert("Please install MetaMask!");
-      return;
-    }
-    try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      setAccount(accounts[0]);
-      setActive(true);
-      setupContract(accounts[0]);
-    } catch (err) {
-      console.error("Connect wallet error:", err);
-    }
-  };
-
-  const disconnectWallet = () => {
-    setAccount(null);
-    setActive(false);
-    setContract(null);
-  };
-
-  const setupContract = async (userAccount, signer = null) => {
-    try {
-      let contractSigner = signer;
-      if (!contractSigner) {
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        contractSigner = provider.getSigner();
-      }
-      const ipContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, contractSigner);
-      setContract(ipContract);
-    } catch (err) {
-      console.error("Setup contract error:", err);
-    }
-  };
-
-  const connectDevWallet = async () => {
-    try {
-      const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545');
-      const devPrivateKey = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'; // Account 0
-      const signer = new ethers.Wallet(devPrivateKey, provider);
-      await provider.ready;
-      const address = await signer.getAddress();
-      setAccount(address);
-      setActive(true);
-      setupContract(address, signer);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to connect to Localhost 8545. Make sure the blockchain is running!");
-    }
-  };
 
 
 
