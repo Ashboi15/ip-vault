@@ -526,7 +526,7 @@ const App = () => {
             )}
           </div>
         </div>
-      </>
+      </div>
         )}
 
       {/* VIEW: VERIFY IP */}
