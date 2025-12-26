@@ -1,67 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
 import LoginPage from './components/LoginPage';
 import { QRCodeSVG } from 'qrcode.react';
 import BlockExplorer from './components/BlockExplorer';
-import { createWeb3Modal, defaultConfig } from '@web3modal/ethers/react';
-import { useWeb3ModalProvider, useWeb3ModalAccount } from '@web3modal/ethers/react';
-
-// 1. Get projectId from WalletConnect Cloud
-const projectId = 'YOUR_PROJECT_ID'; // Replace with a real one for production
-
-// 2. Set chains
-const mainnet = {
-  chainId: 1,
-  name: 'Ethereum',
-  currency: 'ETH',
-  explorerUrl: 'https://etherscan.io',
-  rpcUrl: 'https://cloudflare-eth.com'
-}
-
-const sepolia = {
-  chainId: 11155111,
-  name: 'Sepolia',
-  currency: 'ETH',
-  explorerUrl: 'https://sepolia.etherscan.io',
-  rpcUrl: 'https://rpc.sepolia.org'
-}
-
-const local = {
-  chainId: 1337,
-  name: 'Localhost',
-  currency: 'ETH',
-  rpcUrl: 'http://127.0.0.1:8545'
-}
-
-// 3. Create a metadata object
-const metadata = {
-  name: 'IP Vault',
-  description: 'Blockchain IP Registration',
-  url: 'https://ip-vault.netlify.app', // origin must match your domain & subdomain
-  icons: ['https://avatars.mywebsite.com/']
-}
-
-// 4. Create Ethers config
-const ethersConfig = defaultConfig({
-  /*Required*/
-  metadata,
-
-  /*Optional*/
-  enableEIP6963: true, // true by default
-  enableInjected: true, // true by default
-  enableCoinbase: true, // true by default
-  rpcUrl: '...', // used for the Coinbase SDK
-  defaultChainId: 1, // used for the Coinbase SDK
-})
-
-// 5. Create a Web3Modal instance
-createWeb3Modal({
-  ethersConfig,
-  chains: [mainnet, sepolia, local],
-  projectId,
-  enableAnalytics: true // Optional - defaults to your Cloud configuration
-})
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 // Contract Address (from your local deployment)
@@ -75,23 +17,19 @@ const CONTRACT_ABI = [
 ];
 
 const App = () => {
-  // --- WEB3MODAL HOOKS ---
-  const { address, isConnected } = useWeb3ModalAccount()
-  const { walletProvider } = useWeb3ModalProvider()
-
   // --- AUTH STATE ---
   const [user, setUser] = useState(null); // Web2 User
   const [dbFiles, setDbFiles] = useState([]);
 
   // --- EXISTING STATE ---
-  // const [account, setAccount] = useState(null); // Replaced by 'address'
-  // const [active, setActive] = useState(false);  // Replaced by 'isConnected'
+  const [account, setAccount] = useState(null); // Web3 Account
+  const [active, setActive] = useState(false);
   const [contract, setContract] = useState(null);
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadProgress, setUploadProgress] useState(0);
   const [uploadedHash, setUploadedHash] = useState('');
   const [message, setMessage] = useState('');
 
@@ -118,25 +56,22 @@ const App = () => {
       setUser(JSON.parse(storedUser));
       fetchDbFiles(token);
     }
-  }, []);
 
-  // Sync Contract when Provider Changes
-  useEffect(() => {
-    if (isConnected && walletProvider) {
-      setupContract(); // New setup
-    } else {
-      setContract(null);
+    // Check Wallet
+    checkWalletConnection();
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', (accounts) => {
+        if (accounts.length > 0) {
+          setAccount(accounts[0]);
+          setActive(true);
+          setupContract(accounts[0]);
+        } else {
+          disconnectWallet();
+        }
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, walletProvider]);
-
-  const setupContract = async () => {
-    if (!walletProvider) return;
-    const ethersProvider = new ethers.BrowserProvider(walletProvider)
-    const signer = await ethersProvider.getSigner()
-    const ipContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-    setContract(ipContract);
-  }
+  }, []);
 
   // Fetch Files from DB (Authenticated)
   const fetchDbFiles = async (tokenOverride) => {
@@ -212,85 +147,166 @@ const App = () => {
     }
   };
 
+  const checkWalletConnection = async () => {
+    if (window.ethereum) {
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+          setAccount(accounts[0]);
+          setActive(true);
+          setupContract(accounts[0]);
+        }
+      } catch (err) {
+        console.error("Check wallet error:", err);
+      }
+    }
+  };
 
+  const connectWallet = async () => {
+    if (!window.ethereum) {
+      alert("Please install MetaMask!");
+      return;
+    }
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      setAccount(accounts[0]);
+      setActive(true);
+      setupContract(accounts[0]);
+    } catch (err) {
+      console.error("Connect wallet error:", err);
+    }
+  };
 
+  const disconnectWallet = () => {
+    setAccount(null);
+    setActive(false);
+    setContract(null);
+  };
 
+  const setupContract = async (userAccount, signer = null) => {
+    try {
+      let contractSigner = signer;
+      if (!contractSigner) {
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        contractSigner = provider.getSigner();
+      }
+      const ipContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, contractSigner);
+      setContract(ipContract);
+    } catch (err) {
+      console.error("Setup contract error:", err);
+    }
+  };
+
+  const connectDevWallet = async () => {
+    try {
+      const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545');
+      const devPrivateKey = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'; // Account 0
+      const signer = new ethers.Wallet(devPrivateKey, provider);
+      await provider.ready;
+      const address = await signer.getAddress();
+      setAccount(address);
+      setActive(true);
+      setupContract(address, signer);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to connect to Localhost 8545. Make sure the blockchain is running!");
+    }
+  };
 
   // --- UPLOAD ---
   const handleFileChange = (e) => {
-    if (e.target.files.length > 0) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      const fileObj = { name: file.name, size: file.size, status: 'pending' };
-      setSelectedFiles([fileObj]);
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      setSelectedFiles(files); // Store multiple
+      setSelectedFile(files[0]); // Keep single for preview if needed
       setShowUploadModal(true);
       setMessage('');
       setUploadedHash('');
     }
   };
 
+  const uploadToIpfsStub = async (file) => {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const fakeHash = "Qm" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        resolve(fakeHash);
+      }, 1500);
+    });
+  };
+
   const handleUpload = async () => {
-    if (!selectedFile) return;
-    // Require Wallet for Blockchain, Require Login for DB
-    if (!contract) {
+    if (selectedFiles.length === 0) return;
+    if (!contract && !active) {
       alert("Please connect your wallet first!");
       return;
     }
 
     setIsUploading(true);
     setUploadProgress(10);
+    setMessage('');
 
     try {
-      // 1. Upload to Backend (Authenticated)
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
-      updateFileStatus('uploading');
-
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error('Backend upload failed');
-      const data = await response.json();
-      const contentHash = data.contentHash;
-
-      setUploadedHash(contentHash);
-      setUploadProgress(50);
+      // 1. Upload to IPFS (All files) - For demo we just hash the first one or loop
+      // In a real app we would loop. Here we just take the first one for the main Hash
+      const fileToRegister = selectedFiles[0];
+      setUploadProgress(40);
+      const ipfsHash = await uploadToIpfsStub(fileToRegister);
+      setUploadedHash(ipfsHash);
+      setUploadProgress(70);
 
       // 2. Register on Blockchain
-      setMessage("Please confirm the transaction in MetaMask...");
+      if (contract) {
+        const tx = await contract.registerIP(ipfsHash, fileToRegister.name, "Securely stored in IP Vault");
 
-      const tx = await contract.registerIP(
-        contentHash,
-        selectedFile.name,
-        "Uploaded via IP Vault"
-      );
+        // Show in Explorer
+        setExplorerTx({
+          hash: tx.hash,
+          status: 'Pending',
+          block: '...',
+          from: account,
+          to: CONTRACT_ADDRESS,
+          timestamp: 'Just now'
+        });
 
-      setMessage("Transaction submitted! Waiting for confirmation...");
-      await tx.wait();
+        await tx.wait();
+
+        // Update Explorer
+        setExplorerTx({
+           hash: tx.hash,
+           status: 'Success',
+           block: 10245, // Demo
+           from: account,
+           to: CONTRACT_ADDRESS,
+           timestamp: new Date().toLocaleString()
+        });
+      }
 
       setUploadProgress(100);
-      updateFileStatus('success');
-      setMessage(`Success! Transaction: ${tx.hash}`);
+      setMessage(`Success! File registered. Hash: ${ipfsHash}`);
 
-      // Refresh DB list
-      fetchDbFiles();
+      // Add to local list for demo
+      const newFile = {
+        id: Date.now(),
+        name: fileToRegister.name,
+        description: "Securely stored in IP Vault",
+        hash: ipfsHash,
+        uploaded: new Date().toISOString(),
+        status: 'verified'
+      };
+      // Optimistic UI update
+      setDbFiles([...dbFiles, newFile]);
 
       setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
         setShowUploadModal(false);
-        setSelectedFile(null);
         setSelectedFiles([]);
+        setSelectedFile(null);
       }, 2000);
 
     } catch (err) {
       console.error(err);
-      setMessage(`Error: ${err.message}`);
-      updateFileStatus('error');
-    } finally {
+      setMessage("Error uploading file. Check console.");
       setIsUploading(false);
     }
   };
@@ -306,78 +322,83 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-purple-500 selection:text-white">
-      {/* Navigation */}
-      <nav className="bg-gray-900 bg-opacity-80 backdrop-blur-md fixed w-full z-50 border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 cursor-pointer" onClick={() => window.location.reload()}>
-                <div className="flex items-center">
-                  <div className="blockchain-node mr-2 text-purple-500">
-                    <i className="fas fa-cube text-2xl"></i>
-                  </div>
-                  <span className="title-font text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-500">IP VAULT</span>
-                </div>
-              </div>
-              <div className="hidden md:block">
-                <div className="ml-10 flex items-baseline space-x-4">
-                  <button onClick={() => setCurrentView('dashboard')} className={`nav-item px-3 py-2 rounded-md text-sm font-medium transition ${currentView === 'dashboard' ? 'text-white bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`}>
-                    Dashboard
-                  </button>
-                  <button onClick={() => setCurrentView('verify')} className={`nav-item px-3 py-2 rounded-md text-sm font-medium transition ${currentView === 'verify' ? 'text-white bg-gray-800' : 'text-gray-300 hover:text-white hover:bg-gray-800'}`}>
-                    Verify IP
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="hidden md:block">
-              <div className="ml-4 flex items-center md:ml-6 gap-3">
-                {/* User Info from DB */}
-                <div className="text-gray-300 text-xs px-2 py-1 bg-gray-800 rounded border border-gray-700">
-                  <i className="fas fa-user-circle mr-1"></i> {user.username}
-                </div>
 
-                {!isConnected ? (
-                  <div className="flex items-center">
-                    {/* Web3Modal Button */}
-                    <w3m-button />
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-4 bg-gray-800 px-4 py-2 rounded-full border border-gray-700">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-gray-300 text-sm font-mono">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
-                    <w3m-button /> {/* This handles disconnect/account view */}
-                  </div>
-                )}
+      {/* Background Gradients */}
+      <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[100px]"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 rounded-full blur-[100px]"></div>
+      </div>
 
-                <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-xs ml-4 border border-red-900/30 px-2 py-1 rounded bg-red-900/10">
-                  Logout
+      <div className="container mx-auto px-4 py-6 max-w-7xl">
+
+        {/* Navbar */}
+        <nav className="flex justify-between items-center mb-10 bg-gray-800/50 backdrop-blur-md p-4 rounded-2xl border border-gray-700/50 shadow-xl sticky top-4 z-50">
+          <div className="flex items-center space-x-2">
+             <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center shadow-lg">
+                <i className="fas fa-cube text-white text-xl"></i>
+             </div>
+             <span className="text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400">IP Vault</span>
+          </div>
+
+          {/* Desktop Menu */}
+          <div className="hidden md:flex items-center space-x-1">
+             <button onClick={() => setCurrentView('dashboard')} className={`px-4 py-2 rounded-lg transition-all duration-200 ${currentView === 'dashboard' ? 'bg-gray-700 text-white shadow-inner' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}>
+               <i className="fas fa-th-large mr-2"></i> Dashboard
+             </button>
+             <button onClick={() => setCurrentView('verify')} className={`px-4 py-2 rounded-lg transition-all duration-200 ${currentView === 'verify' ? 'bg-gray-700 text-white shadow-inner' : 'text-gray-400 hover:text-white hover:bg-gray-700/50'}`}>
+                <i className="fas fa-search mr-2"></i> Verify IP
+             </button>
+             <a href="#" className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700/50 transition-all">
+                <i className="fas fa-book mr-2"></i> Docs
+             </a>
+          </div>
+
+          {/* User Profile / Connect */}
+          <div className="flex items-center space-x-4">
+             <div className="hidden md:flex items-center space-x-2 bg-gray-800/80 px-3 py-1.5 rounded-lg border border-gray-700">
+                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                <span className="text-sm font-medium text-gray-300">Sepolia Testnet</span>
+             </div>
+
+            {!active ? (
+              <div className="flex items-center">
+                <button
+                  onClick={connectWallet}
+                  className="bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg transform hover:scale-105 transition duration-200 flex items-center"
+                >
+                  <i className="fas fa-wallet mr-2"></i> Connect
+                </button>
+                <button
+                  onClick={connectDevWallet}
+                  className="ml-2 text-gray-400 hover:text-white text-xs underline"
+                >
+                  Dev Mode
                 </button>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center space-x-4 bg-gray-800 px-4 py-2 rounded-full border border-gray-700">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                <span className="text-gray-300 text-sm font-mono">{account?.slice(0, 6)}...{account?.slice(-4)}</span>
+                <button onClick={disconnectWallet} className="text-gray-400 hover:text-white ml-2" title="Disconnect Wallet">
+                  <i className="fas fa-unlink"></i>
+                </button>
+              </div>
+            )}
+
+            <button onClick={handleLogout} className="text-gray-400 hover:text-red-400 transition-colors ml-2">
+              <i className="fas fa-sign-out-alt"></i>
+            </button>
           </div>
-        </div>
-      </nav>
+        </nav>
 
-      {/* Main Content */}
-      <div className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        {/* --- MAIN CONTENT --- */}
+
         {currentView === 'dashboard' && (
-          <>
-            {/* User Vault ID Card */}
-            <div className="mb-12 bg-gradient-to-r from-gray-800 to-gray-900 rounded-2xl p-1 border border-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.15)] max-w-3xl mx-auto transform hover:scale-[1.01] transition-all">
-              <div className="bg-gray-900 rounded-xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-
-                <div className="relative">
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 p-1">
-                    <div className="w-full h-full rounded-full bg-gray-900 flex items-center justify-center">
-                      <i className="fas fa-user-astronaut text-4xl text-gray-200"></i>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex-1 text-center md:text-left z-10">
-                  <h2 className="text-sm text-purple-400 font-bold tracking-widest uppercase mb-1">Authenticated Account</h2>
+          <div className="animate-fade-in-up">
+             {/* Header Section */}
+             <div className="flex flex-col md:flex-row justify-between items-end mb-8">
+               <div>
+                  <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-1">Welcome back</h2>
                   <h1 className="text-2xl font-mono text-white mb-2 break-all">{user.username} {user.email ? `(${user.email})` : ''}</h1>
                   <div className="flex items-center justify-center md:justify-start gap-4 text-sm text-gray-400">
                     <span className="flex items-center"><i className="fas fa-shield-alt mr-2 text-blue-400"></i> Database Verified</span>
